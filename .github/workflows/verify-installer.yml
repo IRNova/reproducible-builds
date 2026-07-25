@@ -1,0 +1,48 @@
+# Public reproducible-build verification for the Nova installer site
+# (novaproxy.online, including the /install one-click installer).
+#
+# This job checks out the PUBLIC source at IRNova's site repository, builds it
+# from scratch with the same `npm run build` Cloudflare Pages runs, and records
+# a SHA-256 of the build output. Anyone can check out the same commit, run the
+# same build, and compare the hash to what novaproxy.online serves. The point is
+# simple: the deployed site is produced from public source, nothing hidden.
+#
+# It runs on the IRNova organization's runners (kept green and reliable) and
+# uses NO credentials of any kind.
+name: Verify installer build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Re-verify weekly so the badge reflects the current published source.
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the public installer source
+        uses: actions/checkout@v4
+        with:
+          repository: iiviirv/irnova-site
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Record the build output hash
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          TREE=$(find dist -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')
+          {
+            echo "### Installer reproducible-build check"
+            echo ""
+            echo "- Source: \`iiviirv/irnova-site@${COMMIT}\`"
+            echo "- dist tree SHA-256: \`${TREE}\`"
+            echo ""
+            echo "Reproduce locally: \`git clone https://github.com/iiviirv/irnova-site && cd irnova-site && npm ci && npm run build\`, then hash \`dist\` the same way."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
